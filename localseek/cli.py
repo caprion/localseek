@@ -453,6 +453,25 @@ def cmd_metrics(args):
         metrics_db.close()
 
 
+def cmd_serve(args):
+    """Start the web UI server."""
+    try:
+        from .web import run_server
+    except ImportError as e:
+        print(f"Error: Web module not available: {e}", file=sys.stderr)
+        return 1
+    
+    print(f"Starting localseek web UI on http://{args.host}:{args.port}")
+    print("Press Ctrl+C to stop")
+    
+    try:
+        run_server(port=args.port, host=args.host)
+    except KeyboardInterrupt:
+        print("\nServer stopped.")
+    
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="localseek",
@@ -518,6 +537,12 @@ def main():
     metrics_parser.add_argument("--compare", metavar="ID1,ID2", help="Compare two snapshots (e.g., --compare 1,2)")
     metrics_parser.add_argument("--json", action="store_true", help="JSON output")
     metrics_parser.set_defaults(func=cmd_metrics)
+    
+    # serve
+    serve_parser = subparsers.add_parser("serve", help="Start web UI server")
+    serve_parser.add_argument("--port", type=int, default=8080, help="Port number (default: 8080)")
+    serve_parser.add_argument("--host", default="127.0.0.1", help="Host address (default: 127.0.0.1)")
+    serve_parser.set_defaults(func=cmd_serve)
     
     args = parser.parse_args()
     

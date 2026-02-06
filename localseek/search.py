@@ -233,6 +233,39 @@ class Searcher:
             return dict(row)
         return None
     
+    def autocomplete(self, prefix: str, limit: int = 8) -> List[Dict[str, str]]:
+        """
+        Get autocomplete suggestions based on document titles
+        
+        Args:
+            prefix: Search prefix
+            limit: Maximum suggestions
+            
+        Returns:
+            List of {title, collection, path} dicts
+        """
+        if not prefix or len(prefix) < 2:
+            return []
+        
+        # Clean the prefix
+        prefix_clean = prefix.strip().lower()
+        
+        # Search for matching titles using LIKE
+        sql = """
+            SELECT DISTINCT d.title, c.name as collection, d.path
+            FROM documents d
+            JOIN collections c ON c.id = d.collection_id
+            WHERE LOWER(d.title) LIKE ?
+            ORDER BY d.title
+            LIMIT ?
+        """
+        
+        try:
+            rows = self.conn.execute(sql, [f"%{prefix_clean}%", limit]).fetchall()
+            return [{"title": row["title"], "collection": row["collection"], "path": row["path"]} for row in rows]
+        except sqlite3.OperationalError:
+            return []
+    
     def close(self):
         """Close database connection"""
         self.conn.close()

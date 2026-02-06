@@ -11,6 +11,9 @@ A lightweight, local-first full-text search engine for your documents. Zero exte
 - **Zero dependencies** — Uses Python's built-in sqlite3
 - **Collection-based** — Index multiple folders separately
 - **CLI-first** — Simple command-line interface
+- **Web UI** — Browser-based search with autocomplete
+- **LLM Summarization** — AI-powered result summaries (via Ollama)
+- **Web Search** — Augment local results with DuckDuckGo
 - **Agent-friendly** — JSON output for LLM integrations
 - **Pluggable** — Optional reranker and query expansion modules
 - **Privacy-first** — Everything runs locally, no external calls
@@ -116,6 +119,41 @@ localseek search "productivity" --expand --expand-count 3 --rerank --rerank-topk
 export LOCALSEEK_LLM_URL=http://localhost:11434   # Default (Ollama)
 export LOCALSEEK_LLM_MODEL=qwen2.5:1.5b           # Default model
 ```
+
+### Summarization & Web Search
+
+Generate LLM-powered summaries of search results:
+
+```bash
+# Summarize search results
+localseek search "decision frameworks" --summarize
+
+# Include web search results
+localseek search "latest AI trends" --fetch
+
+# Combine local + web results with summary
+localseek search "productivity tips" --fetch --summarize
+```
+
+### Web UI
+
+A simple browser-based interface with autocomplete:
+
+```bash
+# Start the web server
+localseek serve
+
+# Custom port
+localseek serve --port 8000
+
+# Access at http://127.0.0.1:8080
+```
+
+Features:
+- Search box with autocomplete from document titles
+- Toggle options: expand, rerank, fetch web, summarize
+- Click results to open files directly
+- Real-time search statistics
 
 ## Architecture
 

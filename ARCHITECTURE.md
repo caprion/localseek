@@ -25,20 +25,26 @@ localseek is a local-first full-text search engine designed for personal knowled
 │  │    CLI      │────▶│   Search    │────▶│   Index     │                   │
 │  │   cli.py    │     │  search.py  │     │  index.py   │                   │
 │  └─────────────┘     └──────┬──────┘     └─────────────┘                   │
-│                             │                                               │
-│                    ┌────────┴────────┐                                     │
-│                    ▼                 ▼                                     │
-│           ┌─────────────┐    ┌─────────────┐                               │
-│           │   Expand    │    │   Rerank    │     OPTIONAL                  │
-│           │  expand.py  │    │  rerank.py  │     (requires LLM server)     │
-│           └──────┬──────┘    └──────┬──────┘                               │
-│                  │                  │                                       │
-│                  └────────┬─────────┘                                       │
-│                           ▼                                                 │
-│                    ┌─────────────┐                                         │
-│                    │ LLM Client  │                                         │
-│                    │llm_client.py│                                         │
-│                    └─────────────┘                                         │
+│         │                   │                                               │
+│         │          ┌────────┴────────┐                                     │
+│         │          ▼                 ▼                                     │
+│         │  ┌─────────────┐    ┌─────────────┐                               │
+│         │  │   Expand    │    │   Rerank    │     OPTIONAL                  │
+│         │  │  expand.py  │    │  rerank.py  │     (requires Ollama)         │
+│         │  └──────┬──────┘    └──────┬──────┘                               │
+│         │         │                  │                                       │
+│         │         └────────┬─────────┘                                       │
+│         │                  ▼                                                 │
+│         │           ┌─────────────┐                                         │
+│         │           │ LLM Client  │                                         │
+│         │           │llm_client.py│                                         │
+│         │           └─────────────┘                                         │
+│         │                                                                   │
+│         ▼                                                                   │
+│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐                   │
+│  │   Web UI    │     │  Summarize  │     │  Web Search │   OPTIONAL        │
+│  │  server.py  │     │summarize.py │     │web_search.py│                   │
+│  └─────────────┘     └─────────────┘     └─────────────┘                   │
 │                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                           STORAGE                                           │
@@ -387,15 +393,20 @@ localseek/
 │   ├── cli.py              # Command line interface
 │   ├── config.py           # Configuration management
 │   ├── index.py            # FTS5 indexing
-│   ├── search.py           # BM25 search + RRF fusion
-│   ├── cache.py            # Cache management
+│   ├── search.py           # BM25 search + autocomplete
 │   ├── metrics.py          # Logging and metrics
 │   │
-│   └── optional/
+│   ├── optional/
+│   │   ├── __init__.py
+│   │   ├── llm_client.py   # HTTP client for Ollama
+│   │   ├── expand.py       # Query expansion
+│   │   ├── rerank.py       # Document reranking
+│   │   ├── summarize.py    # LLM result summarization
+│   │   └── web_search.py   # DuckDuckGo web search
+│   │
+│   └── web/
 │       ├── __init__.py
-│       ├── llm_client.py   # HTTP client for LLM server
-│       ├── expand.py       # Query expansion
-│       └── rerank.py       # Document reranking
+│       └── server.py       # Web UI (built-in HTTPServer)
 │
 ├── tests/
 │   ├── test_index.py
