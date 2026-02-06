@@ -81,6 +81,22 @@ localseek search "authentication" --json
 
 ### With LLM Enhancement (Optional)
 
+Requires [Ollama](https://ollama.com/) for query expansion and reranking.
+
+**Setup Ollama:**
+```bash
+# Install Ollama (Windows)
+winget install Ollama.Ollama
+
+# Or download from https://ollama.com/download
+
+# Pull a small model (~1GB)
+ollama pull qwen2.5:1.5b
+
+# Ollama runs automatically on http://localhost:11434
+```
+
+**Use with localseek:**
 ```bash
 # Query expansion (generates alternative phrasings)
 localseek search "how to think better" --expand
@@ -91,8 +107,14 @@ localseek search "best practices" --rerank
 # Full pipeline
 localseek search "design patterns" --expand --rerank
 
-# Requires a local LLM server (e.g., llama.cpp, Ollama)
-export LOCALSEEK_LLM_URL=http://localhost:8000
+# Tune parameters
+localseek search "productivity" --expand --expand-count 3 --rerank --rerank-topk 30
+```
+
+**Custom model or server:**
+```bash
+export LOCALSEEK_LLM_URL=http://localhost:11434   # Default (Ollama)
+export LOCALSEEK_LLM_MODEL=qwen2.5:1.5b           # Default model
 ```
 
 ## Architecture
@@ -151,14 +173,37 @@ Environment variables:
 # Core
 LOCALSEEK_DB_PATH=~/.cache/localseek/index.sqlite
 
-# LLM Integration (optional)
-LOCALSEEK_LLM_URL=http://localhost:8000
+# LLM Integration (Ollama)
+LOCALSEEK_LLM_URL=http://localhost:11434   # Ollama default
+LOCALSEEK_LLM_MODEL=qwen2.5:1.5b           # Model to use
+LOCALSEEK_LLM_TIMEOUT=60                   # Seconds
+
+# Query Expansion
 LOCALSEEK_EXPAND_COUNT=2        # Number of query expansions
+
+# Reranking  
 LOCALSEEK_RERANK_TOPK=20        # Candidates for reranking
 
 # Logging
 LOCALSEEK_LOG_LEVEL=metrics     # off|errors|metrics|debug|full
 ```
+
+### Metrics & Improvement
+
+Track search quality over time:
+
+```bash
+# View current metrics
+localseek metrics
+
+# Save a snapshot before changes
+localseek metrics --snapshot "before tuning"
+
+# Compare snapshots
+localseek metrics --compare 1,2
+```
+
+See [RELEVANCE-PLAYBOOK.md](RELEVANCE-PLAYBOOK.md) for improving search quality.
 
 ## Contributing
 
