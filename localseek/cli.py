@@ -113,6 +113,21 @@ def cmd_search(args):
         else:
             results = results[:args.limit]
         
+        # Fetch web results if requested
+        use_fetch = getattr(args, 'fetch', False)
+        web_results = []
+        if use_fetch:
+            try:
+                from .optional.web_search import fetch_web_results
+                fetch_count = getattr(args, 'fetch_count', 3)
+                web_results = fetch_web_results(args.query, max_results=fetch_count)
+                if web_results:
+                    print(f"Fetched {len(web_results)} web results", file=sys.stderr)
+            except ImportError:
+                print("Warning: Web search module not available", file=sys.stderr)
+            except Exception as e:
+                print(f"Warning: Web search failed: {e}", file=sys.stderr)
+        
         # Record metrics
         metrics.finish(
             results=results,
@@ -128,7 +143,7 @@ def cmd_search(args):
         summary = None
         if use_summarize:
             try:
-                from .optional.summarize import summarize_results
+                from .optional.summarize import summarize_with_context
                 
                 # Convert results to dicts for summarizer
                 result_dicts = []
@@ -145,7 +160,12 @@ def cmd_search(args):
                     else:
                         result_dicts.append(r)
                 
-                summary = summarize_results(args.query, result_dicts)
+                summary = summarize_with_context(
+                    args.query, 
+                    result_dicts,
+                    expanded_queries=queries if use_expand and len(queries) > 1 else None,
+                    web_results=web_results if web_results else None,
+                )
                     
             except ImportError:
                 print("Warning: Summarize module not available", file=sys.stderr)
@@ -168,7 +188,8 @@ def cmd_search(args):
                         "rerank_score": r.rerank_score,
                         "blended_score": r.blended_score,
                         "collection": r.collection,
-                    } for r in results]
+                    } for r in results],
+                    "web_results": web_results if web_results else None,
                 }
             else:
                 output = {
@@ -176,25 +197,38 @@ def cmd_search(args):
                     "expanded_queries": queries if use_expand else None,
                     "count": len(results),
                     "summary": summary,
-                    "results": [r.to_dict() if hasattr(r, 'to_dict') else r for r in results]
+                    "results": [r.to_dict() if hasattr(r, 'to_dict') else r for r in results],
+                    "web_results": web_results if web_results else None,
                 }
             print(json.dumps(output, indent=2))
         else:
-            if not results:
+            if not results and not web_results:
                 print("No results found.")
                 return 0
             
-            for i, r in enumerate(results, 1):
-                if hasattr(r, 'blended_score'):  # Reranked result
-                    print(f"\n{r.collection}/{r.path}")
-                    print(f"  Title: {r.title}")
-                    print(f"  Score: {r.blended_score:.3f} (BM25: {r.original_score:.2f}, Rerank: {r.rerank_score:.1f})")
-                    print(f"  {r.snippet}")
-                else:
-                    print(f"\n{r.collection}/{r.path}")
-                    print(f"  Title: {r.title}")
-                    print(f"  Score: {r.score:.3f}")
-                    print(f"  {r.snippet}")
+            # Local results
+            if results:
+                print("\n=== Local Documents ===")
+                for i, r in enumerate(results, 1):
+                    if hasattr(r, 'blended_score'):  # Reranked result
+                        print(f"\n{r.collection}/{r.path}")
+                        print(f"  Title: {r.title}")
+                        print(f"  Score: {r.blended_score:.3f} (BM25: {r.original_score:.2f}, Rerank: {r.rerank_score:.1f})")
+                        print(f"  {r.snippet}")
+                    else:
+                        print(f"\n{r.collection}/{r.path}")
+                        print(f"  Title: {r.title}")
+                        print(f"  Score: {r.score:.3f}")
+                        print(f"  {r.snippet}")
+            
+            # Web results
+            if web_results:
+                print("\n=== Web Results ===")
+                for i, r in enumerate(web_results, 1):
+                    print(f"\n[{i}] {r.get('title', 'Untitled')}")
+                    print(f"    {r.get('url', '')}")
+                    if r.get('snippet'):
+                        print(f"    {r.get('snippet', '')[:150]}...")
             
             # Print summary at the end for text output
             if summary:
@@ -447,6 +481,8 @@ def main():
     search_parser.add_argument("--cache", action="store_true", default=True, help="Use cache (default: true)")
     search_parser.add_argument("--no-cache", action="store_false", dest="cache", help="Disable cache")
     search_parser.add_argument("--summarize", action="store_true", help="Generate LLM summary of results")
+    search_parser.add_argument("--fetch", action="store_true", help="Include web search results")
+    search_parser.add_argument("--fetch-count", type=int, default=3, help="Number of web results (default: 3)")
     search_parser.set_defaults(func=cmd_search)
     
     # list
