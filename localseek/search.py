@@ -150,13 +150,22 @@ class Searcher:
         - OR queries: "cats OR dogs" → cats OR dogs
         - Prefix: "think*" → think*
         """
-        # If already contains FTS5 operators, use as-is
-        if any(op in query for op in ['"', 'OR', 'AND', 'NOT', '*', 'NEAR']):
+        # If already contains FTS5 operators, use as-is (advanced user)
+        if any(op in query for op in ['"', 'OR', 'AND', 'NOT', 'NEAR']):
             return query
         
-        # Simple query: just return cleaned tokens
-        # FTS5 will AND them together by default
-        return query.strip()
+        # Escape FTS5 special/problematic characters for simple queries
+        # These can cause syntax errors in FTS5
+        # We keep * for prefix search intentionally
+        special_chars = '^${}[]()\\|:?+-.,;!@#%&=<>\'`~'
+        cleaned = query
+        for char in special_chars:
+            cleaned = cleaned.replace(char, ' ')
+        
+        # Collapse multiple spaces
+        cleaned = ' '.join(cleaned.split())
+        
+        return cleaned.strip()
     
     def _generate_snippet(
         self, 

@@ -123,6 +123,33 @@ def cmd_search(args):
         )
         metrics_db.record(metrics)
         
+        # Prepare summary if requested
+        use_summarize = getattr(args, 'summarize', False)
+        summary = None
+        if use_summarize:
+            try:
+                from .optional.summarize import summarize_results
+                
+                # Convert results to dicts for summarizer
+                result_dicts = []
+                for r in results:
+                    if hasattr(r, 'to_dict'):
+                        result_dicts.append(r.to_dict())
+                    elif hasattr(r, 'blended_score'):
+                        result_dicts.append({
+                            "title": r.title,
+                            "snippet": r.snippet,
+                            "score": r.blended_score,
+                            "path": r.path,
+                        })
+                    else:
+                        result_dicts.append(r)
+                
+                summary = summarize_results(args.query, result_dicts)
+                    
+            except ImportError:
+                print("Warning: Summarize module not available", file=sys.stderr)
+        
         # Output
         if args.json:
             if use_rerank and results and hasattr(results[0], 'blended_score'):
@@ -132,6 +159,7 @@ def cmd_search(args):
                     "count": len(results),
                     "used_expansion": use_expand,
                     "used_rerank": use_rerank,
+                    "summary": summary,
                     "results": [{
                         "path": r.path,
                         "title": r.title,
@@ -147,6 +175,7 @@ def cmd_search(args):
                     "query": args.query,
                     "expanded_queries": queries if use_expand else None,
                     "count": len(results),
+                    "summary": summary,
                     "results": [r.to_dict() if hasattr(r, 'to_dict') else r for r in results]
                 }
             print(json.dumps(output, indent=2))
@@ -166,6 +195,15 @@ def cmd_search(args):
                     print(f"  Title: {r.title}")
                     print(f"  Score: {r.score:.3f}")
                     print(f"  {r.snippet}")
+            
+            # Print summary at the end for text output
+            if summary:
+                print("\n" + "=" * 60)
+                print("SUMMARY")
+                print("=" * 60)
+                print(summary)
+            elif use_summarize:
+                print("\n(LLM not available for summarization)")
         
         return 0
     except Exception as e:
@@ -408,6 +446,7 @@ def main():
     search_parser.add_argument("--rerank-topk", type=int, default=20, help="Candidates to rerank (default: 20)")
     search_parser.add_argument("--cache", action="store_true", default=True, help="Use cache (default: true)")
     search_parser.add_argument("--no-cache", action="store_false", dest="cache", help="Disable cache")
+    search_parser.add_argument("--summarize", action="store_true", help="Generate LLM summary of results")
     search_parser.set_defaults(func=cmd_search)
     
     # list
