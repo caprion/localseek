@@ -1,21 +1,11 @@
 # localseek TODO
 
-## In Progress
-
-- [ ] Implement `cache.py` — cache management with invalidation
-- [ ] Implement `metrics.py` — anonymous logging and metrics
-- [ ] Implement `optional/llm_client.py` — HTTP client for LLM server
-- [ ] Implement `optional/expand.py` — query expansion
-- [ ] Implement `optional/rerank.py` — document reranking
-
 ## Open
 
 - [ ] Strip markdown frontmatter from snippets
 - [ ] Add phrase search examples to README
-- [ ] Add pyproject.toml for pip install
 - [ ] Write tests
 - [ ] Add `localseek files <collection>` command to list indexed files
-- [ ] Add `localseek metrics` command to show search analytics
 - [ ] Add `localseek cache clear` command
 - [ ] Consider: graph integration with concept graphs
 - [ ] Consider: MCP server for agent integration
@@ -49,3 +39,11 @@
 - [x] ARCHITECTURE.md with full design documentation
 - [x] Cache invalidation strategy designed
 - [x] Logging/metrics system designed
+- [x] Implement `metrics.py` — anonymous logging and snapshots
+- [x] Implement `optional/llm_client.py` — HTTP client for LLM server
+- [x] Implement `optional/expand.py` — query expansion with cache
+- [x] Implement `optional/rerank.py` — document reranking with position-aware blending
+- [x] Add CLI `--expand` and `--rerank` flags
+- [x] Add `localseek metrics` command with snapshots
+- [x] Add pyproject.toml for pip install
+- [x] RELEVANCE-PLAYBOOK.md for improvement workflow

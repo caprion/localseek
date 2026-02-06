@@ -4,6 +4,9 @@ CLI interface for localseek
 Usage:
     python -m localseek add <path> --name <name>
     python -m localseek search <query>
+    python -m localseek search <query> --expand --rerank
+    python -m localseek metrics
+    python -m localseek metrics --snapshot "description"
     python -m localseek list
     python -m localseek status
 """
@@ -12,10 +15,11 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from .index import Indexer
 from .search import Searcher
+from .metrics import get_metrics_db, SearchMetrics
 
 
 def cmd_add(args):
@@ -39,22 +43,112 @@ def cmd_add(args):
 
 
 def cmd_search(args):
-    """Search documents"""
+    """Search documents with optional LLM enhancement"""
     searcher = Searcher()
+    metrics_db = get_metrics_db()
+    metrics = SearchMetrics.start(args.query, args.collection)
+    
     try:
-        results = searcher.search(
-            query=args.query,
-            collection=args.collection,
-            limit=args.limit,
-            min_score=args.min_score
-        )
+        # Track enhancement options
+        use_expand = getattr(args, 'expand', False)
+        use_rerank = getattr(args, 'rerank', False)
+        cache_hit_expansion = False
+        cache_hit_rerank = 0
         
+        # Get base results (possibly with expansion)
+        queries = [args.query]
+        
+        if use_expand:
+            try:
+                from .optional.expand import expand_query, ExpansionCache
+                cache = ExpansionCache() if args.cache else None
+                queries, cache_hit_expansion = expand_query(
+                    args.query, 
+                    count=args.expand_count,
+                    cache=cache
+                )
+                if len(queries) > 1:
+                    print(f"Expanded to {len(queries)} queries: {queries}", file=sys.stderr)
+            except ImportError:
+                print("Warning: Expansion module not available", file=sys.stderr)
+        
+        # Search with all queries and merge (RRF)
+        all_results = []
+        for q in queries:
+            results = searcher.search(
+                query=q,
+                collection=args.collection,
+                limit=args.limit * 2 if use_rerank else args.limit,
+                min_score=args.min_score
+            )
+            all_results.extend(results)
+        
+        # Dedupe and RRF merge if multiple queries
+        if len(queries) > 1:
+            results = _rrf_merge(all_results, queries, args.limit * 2 if use_rerank else args.limit)
+        else:
+            results = all_results[:args.limit * 2 if use_rerank else args.limit]
+        
+        # Rerank if requested
+        if use_rerank and results:
+            try:
+                from .optional.rerank import rerank_results, RerankCache
+                cache = RerankCache() if args.cache else None
+                
+                # Convert to dicts for reranker
+                result_dicts = [r.to_dict() for r in results]
+                reranked, cache_hit_rerank = rerank_results(
+                    args.query,
+                    result_dicts,
+                    topk=args.rerank_topk,
+                    cache=cache
+                )
+                
+                # Use reranked results
+                if reranked:
+                    results = reranked[:args.limit]
+                    
+            except ImportError:
+                print("Warning: Rerank module not available", file=sys.stderr)
+        else:
+            results = results[:args.limit]
+        
+        # Record metrics
+        metrics.finish(
+            results=results,
+            used_expansion=use_expand,
+            used_rerank=use_rerank,
+            cache_hit_expansion=cache_hit_expansion,
+            cache_hit_rerank=cache_hit_rerank,
+        )
+        metrics_db.record(metrics)
+        
+        # Output
         if args.json:
-            output = {
-                "query": args.query,
-                "count": len(results),
-                "results": [r.to_dict() for r in results]
-            }
+            if use_rerank and results and hasattr(results[0], 'blended_score'):
+                output = {
+                    "query": args.query,
+                    "expanded_queries": queries if use_expand else None,
+                    "count": len(results),
+                    "used_expansion": use_expand,
+                    "used_rerank": use_rerank,
+                    "results": [{
+                        "path": r.path,
+                        "title": r.title,
+                        "snippet": r.snippet,
+                        "original_score": r.original_score,
+                        "rerank_score": r.rerank_score,
+                        "blended_score": r.blended_score,
+                        "collection": r.collection,
+                    } for r in results]
+                }
+            else:
+                output = {
+                    "query": args.query,
+                    "expanded_queries": queries if use_expand else None,
+                    "count": len(results),
+                    "results": [r.to_dict() if hasattr(r, 'to_dict') else r for r in results]
+                }
             print(json.dumps(output, indent=2))
         else:
             if not results:
@@ -62,15 +156,47 @@ def cmd_search(args):
                 return 0
             
             for i, r in enumerate(results, 1):
-                # Header
-                print(f"\n{r.collection}/{r.path}")
-                print(f"  Title: {r.title}")
-                print(f"  Score: {r.score:.3f}")
-                print(f"  {r.snippet}")
+                if hasattr(r, 'blended_score'):  # Reranked result
+                    print(f"\n{r.collection}/{r.path}")
+                    print(f"  Title: {r.title}")
+                    print(f"  Score: {r.blended_score:.3f} (BM25: {r.original_score:.2f}, Rerank: {r.rerank_score:.1f})")
+                    print(f"  {r.snippet}")
+                else:
+                    print(f"\n{r.collection}/{r.path}")
+                    print(f"  Title: {r.title}")
+                    print(f"  Score: {r.score:.3f}")
+                    print(f"  {r.snippet}")
         
         return 0
+    except Exception as e:
+        metrics.error = str(e)
+        metrics_db.record(metrics)
+        raise
     finally:
         searcher.close()
+
+
+def _rrf_merge(results: List, queries: List[str], limit: int) -> List:
+    """Merge results from multiple queries using Reciprocal Rank Fusion"""
+    from collections import defaultdict
+    
+    # RRF with k=60
+    k = 60
+    scores = defaultdict(float)
+    result_map = {}
+    
+    # Group by query and assign ranks
+    for i, r in enumerate(results):
+        key = f"{r.collection}:{r.path}" if hasattr(r, 'collection') else r.get('path', str(i))
+        rank = (i % (len(results) // len(queries) + 1)) + 1  # Approximate rank
+        scores[key] += 1.0 / (k + rank)
+        if key not in result_map:
+            result_map[key] = r
+    
+    # Sort by RRF score
+    sorted_keys = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
+    
+    return [result_map[k] for k in sorted_keys[:limit]]
 
 
 def cmd_list(args):
@@ -181,6 +307,80 @@ def cmd_get(args):
         searcher.close()
 
 
+def cmd_metrics(args):
+    """Show metrics and optionally save a snapshot"""
+    metrics_db = get_metrics_db()
+    
+    try:
+        # Save snapshot if requested
+        if args.snapshot:
+            snapshot_id = metrics_db.save_snapshot(args.snapshot)
+            print(f"Saved snapshot #{snapshot_id}: {args.snapshot}")
+        
+        # Get current stats
+        stats = metrics_db.get_stats()
+        low_score = metrics_db.get_low_score_queries(threshold=3.0, limit=5)
+        snapshots = metrics_db.get_snapshots(limit=5)
+        
+        if args.json:
+            output = {
+                "current": stats,
+                "low_score_queries": low_score,
+                "recent_snapshots": snapshots,
+            }
+            print(json.dumps(output, indent=2, default=str))
+        else:
+            print("=== Current Metrics ===")
+            print(f"Total searches: {stats.get('total_searches', 0)}")
+            print(f"Avg latency: {stats.get('avg_latency_ms', 0):.1f} ms")
+            print(f"Avg top score: {stats.get('avg_top_score', 0):.2f}")
+            print(f"Avg result count: {stats.get('avg_result_count', 0):.1f}")
+            print(f"Expansion usage: {stats.get('expansion_usage_rate', 0):.1f}%")
+            print(f"Rerank usage: {stats.get('rerank_usage_rate', 0):.1f}%")
+            print(f"Cache hit rate: {stats.get('expansion_cache_hit_rate', 0):.1f}%")
+            print(f"Errors: {stats.get('error_count', 0)}")
+            
+            if low_score:
+                print(f"\n=== Low-Score Queries (need improvement) ===")
+                for q in low_score:
+                    print(f"  {q['query_hash'][:8]}... avg_score={q['avg_score']:.2f} count={q['count']}")
+            
+            if snapshots:
+                print(f"\n=== Recent Snapshots ===")
+                for s in snapshots:
+                    note = s.get('note', '-')[:30] if s.get('note') else '-'
+                    print(f"  #{s['id']} {s['timestamp'][:10]} avg_score={s.get('avg_top_score', 0):.2f} note={note}")
+        
+        # Compare if requested
+        if args.compare:
+            ids = args.compare.split(',')
+            if len(ids) == 2:
+                comparison = metrics_db.compare_snapshots(int(ids[0]), int(ids[1]))
+                print(f"\n=== Comparison ===")
+                if "error" in comparison:
+                    print(f"Error: {comparison['error']}")
+                else:
+                    changes = comparison.get("changes", {})
+                    print(f"From: #{comparison['from']['id']} ({comparison['from']['note']})")
+                    print(f"To: #{comparison['to']['id']} ({comparison['to']['note']})")
+                    
+                    score_change = changes.get('avg_top_score', 0)
+                    indicator = "↑" if score_change > 0 else "↓" if score_change < 0 else "="
+                    print(f"  Avg score: {indicator} {score_change:+.3f}")
+                    
+                    latency_change = changes.get('avg_latency_ms', 0)
+                    indicator = "↑" if latency_change > 0 else "↓" if latency_change < 0 else "="
+                    print(f"  Latency: {indicator} {latency_change:+.1f} ms")
+                    
+                    low_change = changes.get('low_score_queries', 0)
+                    indicator = "↑" if low_change > 0 else "↓" if low_change < 0 else "="
+                    print(f"  Low-score queries: {indicator} {low_change:+d}")
+        
+        return 0
+    finally:
+        metrics_db.close()
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="localseek",
@@ -202,6 +402,12 @@ def main():
     search_parser.add_argument("-n", "--limit", type=int, default=10, help="Max results")
     search_parser.add_argument("--min-score", type=float, default=0.0, help="Min score")
     search_parser.add_argument("--json", action="store_true", help="JSON output")
+    search_parser.add_argument("--expand", action="store_true", help="Use LLM query expansion")
+    search_parser.add_argument("--rerank", action="store_true", help="Use LLM reranking")
+    search_parser.add_argument("--expand-count", type=int, default=2, help="Number of query expansions (default: 2)")
+    search_parser.add_argument("--rerank-topk", type=int, default=20, help="Candidates to rerank (default: 20)")
+    search_parser.add_argument("--cache", action="store_true", default=True, help="Use cache (default: true)")
+    search_parser.add_argument("--no-cache", action="store_false", dest="cache", help="Disable cache")
     search_parser.set_defaults(func=cmd_search)
     
     # list
@@ -230,6 +436,13 @@ def main():
     get_parser.add_argument("--full", action="store_true", help="Show full content")
     get_parser.add_argument("--json", action="store_true", help="JSON output")
     get_parser.set_defaults(func=cmd_get)
+    
+    # metrics
+    metrics_parser = subparsers.add_parser("metrics", help="View search metrics and snapshots")
+    metrics_parser.add_argument("--snapshot", metavar="NOTE", help="Save a snapshot with note")
+    metrics_parser.add_argument("--compare", metavar="ID1,ID2", help="Compare two snapshots (e.g., --compare 1,2)")
+    metrics_parser.add_argument("--json", action="store_true", help="JSON output")
+    metrics_parser.set_defaults(func=cmd_metrics)
     
     args = parser.parse_args()
     

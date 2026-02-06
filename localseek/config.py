@@ -28,6 +28,7 @@ class Config:
     # LLM integration
     llm_url: str
     llm_timeout: int
+    llm_model: str
     
     # Query expansion
     expand_enabled: bool
@@ -66,9 +67,10 @@ class Config:
                 str(cache_dir / "metrics.sqlite")
             )),
             
-            # LLM integration
-            llm_url=os.environ.get("LOCALSEEK_LLM_URL", "http://localhost:8000"),
-            llm_timeout=int(os.environ.get("LOCALSEEK_LLM_TIMEOUT", "30")),
+            # LLM integration (Ollama)
+            llm_url=os.environ.get("LOCALSEEK_LLM_URL", "http://localhost:11434"),
+            llm_timeout=int(os.environ.get("LOCALSEEK_LLM_TIMEOUT", "60")),
+            llm_model=os.environ.get("LOCALSEEK_LLM_MODEL", "qwen2.5:1.5b"),
             
             # Query expansion
             expand_enabled=os.environ.get("LOCALSEEK_EXPAND_ENABLED", "true").lower() == "true",

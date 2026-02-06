@@ -52,7 +52,12 @@ class SearchMetrics:
     ):
         """Finish tracking with results"""
         self.result_count = len(results)
-        self.top_score = results[0].score if results else 0.0
+        if results:
+            # Handle both SearchResult (score) and RerankResult (blended_score)
+            first = results[0]
+            self.top_score = getattr(first, "blended_score", getattr(first, "score", 0.0))
+        else:
+            self.top_score = 0.0
         self.used_expansion = used_expansion
         self.used_rerank = used_rerank
         self.cache_hit_expansion = cache_hit_expansion
@@ -225,6 +230,104 @@ class MetricsDB:
         """, (threshold, limit)).fetchall()
         
         return [dict(row) for row in rows]
+    
+    def save_snapshot(self, note: Optional[str] = None) -> int:
+        """Save a metrics snapshot for tracking improvements over time"""
+        if not self.conn:
+            return -1
+        
+        # Ensure snapshots table exists
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS metrics_snapshots (
+                id INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                note TEXT,
+                total_searches INTEGER,
+                avg_latency_ms REAL,
+                avg_result_count REAL,
+                avg_top_score REAL,
+                expansion_usage_rate REAL,
+                rerank_usage_rate REAL,
+                cache_hit_rate REAL,
+                error_count INTEGER,
+                config_expand_count INTEGER,
+                config_rerank_topk INTEGER,
+                low_score_query_count INTEGER
+            )
+        """)
+        
+        stats = self.get_stats()
+        low_score = self.get_low_score_queries()
+        config = get_config()
+        
+        cursor = self.conn.execute("""
+            INSERT INTO metrics_snapshots 
+            (timestamp, note, total_searches, avg_latency_ms, avg_result_count,
+             avg_top_score, expansion_usage_rate, rerank_usage_rate, cache_hit_rate,
+             error_count, config_expand_count, config_rerank_topk, low_score_query_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now().isoformat(),
+            note,
+            stats.get("total_searches", 0),
+            stats.get("avg_latency_ms", 0),
+            stats.get("avg_result_count", 0),
+            stats.get("avg_top_score", 0),
+            stats.get("expansion_usage_rate", 0),
+            stats.get("rerank_usage_rate", 0),
+            stats.get("expansion_cache_hit_rate", 0),
+            stats.get("error_count", 0),
+            config.expand_count,
+            config.rerank_topk,
+            len(low_score),
+        ))
+        self.conn.commit()
+        return cursor.lastrowid
+    
+    def get_snapshots(self, limit: int = 10) -> List[Dict]:
+        """Get recent snapshots for comparison"""
+        if not self.conn:
+            return []
+        
+        try:
+            rows = self.conn.execute("""
+                SELECT * FROM metrics_snapshots
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.OperationalError:
+            return []  # Table doesn't exist yet
+    
+    def compare_snapshots(self, snapshot_id_1: int, snapshot_id_2: int) -> Dict[str, Any]:
+        """Compare two snapshots to see improvements"""
+        if not self.conn:
+            return {}
+        
+        try:
+            s1 = self.conn.execute(
+                "SELECT * FROM metrics_snapshots WHERE id = ?", (snapshot_id_1,)
+            ).fetchone()
+            s2 = self.conn.execute(
+                "SELECT * FROM metrics_snapshots WHERE id = ?", (snapshot_id_2,)
+            ).fetchone()
+            
+            if not s1 or not s2:
+                return {"error": "Snapshot not found"}
+            
+            return {
+                "from": {"id": s1["id"], "timestamp": s1["timestamp"], "note": s1["note"]},
+                "to": {"id": s2["id"], "timestamp": s2["timestamp"], "note": s2["note"]},
+                "changes": {
+                    "avg_top_score": round((s2["avg_top_score"] or 0) - (s1["avg_top_score"] or 0), 3),
+                    "avg_latency_ms": round((s2["avg_latency_ms"] or 0) - (s1["avg_latency_ms"] or 0), 1),
+                    "low_score_queries": (s2["low_score_query_count"] or 0) - (s1["low_score_query_count"] or 0),
+                    "expansion_usage": round((s2["expansion_usage_rate"] or 0) - (s1["expansion_usage_rate"] or 0), 1),
+                    "rerank_usage": round((s2["rerank_usage_rate"] or 0) - (s1["rerank_usage_rate"] or 0), 1),
+                }
+            }
+        except sqlite3.OperationalError:
+            return {"error": "Snapshots table not found"}
     
     def close(self):
         if self.conn:
