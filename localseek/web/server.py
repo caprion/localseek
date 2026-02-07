@@ -29,21 +29,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>localseek</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
         * { box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
-            background: #f5f5f5;
-            color: #333;
+            background: #faf6f0;
+            color: #3d2b1f;
         }
         h1 { 
-            color: #2d3748;
+            font-family: 'Libre Baskerville', Georgia, serif;
+            color: #3d2b1f;
+            font-weight: 400;
             margin-bottom: 5px;
         }
         .subtitle {
-            color: #718096;
+            color: #8b7560;
             margin-top: 0;
             margin-bottom: 20px;
         }
@@ -56,24 +59,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             flex: 1;
             padding: 12px 16px;
             font-size: 16px;
-            border: 2px solid #e2e8f0;
+            border: 2px solid #ede4d5;
             border-radius: 8px;
             outline: none;
+            background: #ffffff;
+            color: #3d2b1f;
         }
         input[type="text"]:focus {
-            border-color: #4299e1;
+            border-color: #c4a67d;
         }
         button {
             padding: 12px 24px;
             font-size: 16px;
-            background: #4299e1;
+            background: #1a5c4c;
             color: white;
             border: none;
             border-radius: 8px;
             cursor: pointer;
         }
         button:hover {
-            background: #3182ce;
+            background: #2d7a64;
         }
         .options {
             display: flex;
@@ -85,16 +90,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             display: flex;
             align-items: center;
             gap: 5px;
-            color: #4a5568;
+            color: #6b5443;
         }
         .results {
             background: white;
             border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 1px solid #ede4d5;
+            box-shadow: 0 1px 3px rgba(61,43,31,0.06);
         }
         .result {
             padding: 15px 20px;
-            border-bottom: 1px solid #e2e8f0;
+            border-bottom: 1px solid #ede4d5;
         }
         .result:last-child {
             border-bottom: none;
@@ -104,7 +110,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             margin: 0 0 5px 0;
         }
         .result-title a {
-            color: #2b6cb0;
+            color: #c2452d;
             text-decoration: none;
         }
         .result-title a:hover {
@@ -112,46 +118,52 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         .result-meta {
             font-size: 13px;
-            color: #718096;
+            color: #8b7560;
             margin-bottom: 5px;
         }
         .result-snippet {
             font-size: 14px;
-            color: #4a5568;
+            color: #6b5443;
             line-height: 1.5;
         }
         .score {
-            background: #e2e8f0;
+            background: #ede4d5;
             padding: 2px 6px;
             border-radius: 4px;
             font-size: 12px;
+            color: #6b5443;
         }
         .no-results {
             padding: 40px;
             text-align: center;
-            color: #718096;
+            color: #8b7560;
         }
         .loading {
             padding: 40px;
             text-align: center;
-            color: #718096;
+            color: #8b7560;
         }
         .summary {
-            background: #ebf8ff;
-            border: 1px solid #90cdf4;
+            background: #ffffff;
+            border: 1px solid #ede4d5;
+            border-left: 3px solid #1a5c4c;
             border-radius: 8px;
             padding: 15px 20px;
             margin-bottom: 20px;
         }
         .summary h3 {
             margin: 0 0 10px 0;
-            color: #2b6cb0;
+            color: #1a5c4c;
+            font-family: 'Libre Baskerville', Georgia, serif;
+            font-weight: 400;
         }
         .web-results {
             margin-top: 20px;
         }
         .web-results h3 {
-            color: #2d3748;
+            color: #3d2b1f;
+            font-family: 'Libre Baskerville', Georgia, serif;
+            font-weight: 400;
             margin-bottom: 10px;
         }
         .web-result {
@@ -159,10 +171,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             background: #fff;
             border-radius: 6px;
             margin-bottom: 8px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            border: 1px solid #ede4d5;
+            box-shadow: 0 1px 2px rgba(61,43,31,0.04);
         }
         .web-result a {
-            color: #2b6cb0;
+            color: #c2452d;
             text-decoration: none;
         }
         .web-result a:hover {
@@ -170,7 +183,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         .stats {
             font-size: 13px;
-            color: #718096;
+            color: #8b7560;
             margin-bottom: 15px;
         }
         .search-container {
@@ -183,7 +196,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             left: 0;
             right: 0;
             background: white;
-            border: 2px solid #e2e8f0;
+            border: 2px solid #ede4d5;
             border-top: none;
             border-radius: 0 0 8px 8px;
             max-height: 300px;
@@ -197,21 +210,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .autocomplete-item {
             padding: 10px 16px;
             cursor: pointer;
-            border-bottom: 1px solid #e2e8f0;
+            border-bottom: 1px solid #ede4d5;
         }
         .autocomplete-item:last-child {
             border-bottom: none;
         }
         .autocomplete-item:hover, .autocomplete-item.selected {
-            background: #ebf8ff;
+            background: rgba(194,69,45,0.06);
         }
         .autocomplete-item .title {
             font-weight: 500;
-            color: #2d3748;
+            color: #3d2b1f;
         }
         .autocomplete-item .collection {
             font-size: 12px;
-            color: #718096;
+            color: #8b7560;
         }
     </style>
 </head>
@@ -648,7 +661,20 @@ class LocalseekHandler(BaseHTTPRequestHandler):
             return
         
         try:
-            # Open file with default application
+            # Use VS Code for text-based files
+            text_extensions = {'.md', '.txt', '.rst', '.json', '.yaml', '.yml', '.py', '.js', '.ts', '.html', '.css'}
+            use_vscode = path.suffix.lower() in text_extensions
+            
+            if use_vscode:
+                # Try VS Code first
+                try:
+                    subprocess.run(["code", file_path], check=True, shell=(sys.platform == "win32"))
+                    self._send_json({"success": True, "path": file_path, "editor": "vscode"})
+                    return
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    pass  # Fall back to default
+            
+            # Open with default application
             if sys.platform == "win32":
                 os.startfile(file_path)
             elif sys.platform == "darwin":
