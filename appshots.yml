@@ -1,0 +1,21 @@
+# appshots config for localseek
+# Usage: start server (localseek serve), then run: appshots
+
+base_url: "http://127.0.0.1:8080"
+output_dir: "./screenshots"
+viewport: { width: 1280, height: 800 }
+wait_after_load: 1000
+dark_mode: false
+
+shots:
+  - name: "01-home"
+    description: "Home — search box with options"
+    actions:
+      - wait: 500
+
+  - name: "02-search-results"
+    description: "Search results — BM25 ranked local documents"
+    actions:
+      - type: { selector: "#query", text: "python" }
+      - click: "button[onclick='search()']"
+      - wait: 2000
